@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import { ChevronDown, Search } from 'lucide-react';
 
 interface Forest {
@@ -35,7 +36,7 @@ export function ForestSelector({ forests, activeForest, onSelect }: ForestSelect
   }, [forests, search]);
 
   return (
-    <div className="relative w-[320px] mx-auto">
+    <div className="relative z-[120] w-[320px] mx-auto">
       <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
         Popular Forest Zones ({forests.length})
       </p>
@@ -53,7 +54,13 @@ export function ForestSelector({ forests, activeForest, onSelect }: ForestSelect
       </button>
 
       {isOpen ? (
-        <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl">
+        <motion.div
+          className="absolute z-[200] mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl"
+          initial={{ opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.98 }}
+          transition={{ duration: 0.16 }}
+        >
           <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5">
             <Search className="h-3.5 w-3.5 text-slate-400" />
             <input
@@ -87,7 +94,7 @@ export function ForestSelector({ forests, activeForest, onSelect }: ForestSelect
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
       ) : null}
     </div>
   );

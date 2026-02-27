@@ -41,18 +41,18 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0F172A]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.25),transparent_30%),radial-gradient(circle_at_80%_80%,rgba(239,68,68,0.18),transparent_35%),radial-gradient(circle_at_70%_10%,rgba(245,158,11,0.16),transparent_28%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(59,130,246,0.16),transparent_32%),radial-gradient(circle_at_82%_86%,rgba(245,158,11,0.10),transparent_34%)]" />
 
-      {[...Array(14)].map((_, i) => (
+      {[...Array(8)].map((_, i) => (
         <motion.div
           key={i}
-          className="absolute h-1.5 w-1.5 rounded-full bg-[#3B82F6]/60"
+          className="absolute h-1 w-1 rounded-full bg-[#3B82F6]/40"
           style={{
             left: `${Math.random() * 100}%`,
             top: `${Math.random() * 100}%`,
           }}
-          animate={{ y: [0, -24, 0], opacity: [0.2, 0.7, 0.2] }}
-          transition={{ duration: 3 + Math.random() * 2, repeat: Infinity, delay: Math.random() * 2 }}
+          animate={{ y: [0, -16, 0], opacity: [0.2, 0.6, 0.2] }}
+          transition={{ duration: 3.4 + Math.random() * 1.4, repeat: Infinity, delay: Math.random() * 2 }}
         />
       ))}
 
@@ -63,8 +63,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <Waves className="h-12 w-12 text-[#3B82F6]" />
               <Flame className="h-10 w-10 text-[#F59E0B]" />
             </motion.div>
-            <h1 className="mb-2 text-4xl font-semibold text-slate-100">FireGuard AI</h1>
-            <p className="text-lg text-slate-300">Admin Access Only</p>
+            <h1 className="mb-2 text-3xl font-semibold text-slate-100">FireGuard AI</h1>
+            <p className="text-base text-slate-300">Admin Access Only</p>
           </motion.div>
 
           <motion.div

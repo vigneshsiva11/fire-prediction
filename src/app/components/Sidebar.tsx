@@ -28,21 +28,21 @@ export function Sidebar({ currentPage, onNavigate, userRole }: SidebarProps) {
 
   return (
     <motion.div
-      className="h-full bg-[#111b32]/95 border-r border-slate-600/30 relative backdrop-blur-md"
-      initial={{ width: 240 }}
-      animate={{ width: isCollapsed ? 80 : 240 }}
+      className="relative h-full border-r border-slate-600/25 bg-[#0f172a]/95 backdrop-blur-md"
+      initial={{ width: 224 }}
+      animate={{ width: isCollapsed ? 76 : 224 }}
       transition={{ duration: 0.3 }}
     >
       <motion.button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-6 z-10 rounded-full border border-slate-500/40 bg-[#1e293b] p-1 text-slate-100 transition-colors hover:bg-[#334155]"
+        className="absolute -right-3 top-5 z-10 rounded-full border border-slate-500/35 bg-[#111827] p-1 text-slate-100 transition-colors hover:bg-[#1f2937]"
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
       >
         {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </motion.button>
 
-      <div className="mt-20 space-y-2 p-4">
+      <div className="mt-16 space-y-1.5 p-3">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -52,21 +52,21 @@ export function Sidebar({ currentPage, onNavigate, userRole }: SidebarProps) {
             <motion.button
               key={item.id}
               onClick={() => accessible && onNavigate(item.id)}
-              className={`relative flex w-full items-center gap-3 rounded-xl px-4 py-3 transition-all ${
+              className={`relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all duration-200 ${
                 !accessible
                   ? 'cursor-not-allowed text-slate-500 opacity-40'
                   : isActive
-                    ? 'bg-gradient-to-r from-[#3B82F6] to-[#1D4ED8] text-slate-100 shadow-lg shadow-[#1d4ed8]/30'
-                    : 'text-slate-300 hover:bg-[#1e293b] hover:text-slate-100'
+                    ? 'bg-[#1d4ed8] text-slate-100 shadow-[0_12px_24px_-20px_rgba(59,130,246,0.95)]'
+                    : 'text-slate-300 hover:bg-[#111827] hover:text-slate-100'
               }`}
-              whileHover={accessible ? { x: 4 } : {}}
-              whileTap={accessible ? { scale: 0.98 } : {}}
+              whileHover={accessible ? { x: 2 } : {}}
+              whileTap={accessible ? { scale: 0.992 } : {}}
               disabled={!accessible}
               title={!accessible ? 'Admin access only' : ''}
             >
-              <Icon className={`${isCollapsed ? 'h-6 w-6' : 'h-5 w-5'} shrink-0`} />
+              <Icon className={`${isCollapsed ? 'h-5 w-5' : 'h-[18px] w-[18px]'} shrink-0`} />
               {!isCollapsed && (
-                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 text-left text-sm">
+                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 text-left text-[13px]">
                   {item.label}
                 </motion.span>
               )}
@@ -78,7 +78,7 @@ export function Sidebar({ currentPage, onNavigate, userRole }: SidebarProps) {
 
       {!isCollapsed && (
         <motion.div
-          className="absolute bottom-6 left-4 right-4 rounded-xl border border-slate-500/40 bg-slate-800/60 p-3"
+          className="absolute bottom-5 left-3 right-3 rounded-xl border border-slate-500/30 bg-slate-800/40 p-3"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}

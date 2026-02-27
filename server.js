@@ -8,6 +8,7 @@ import riskRoutes from './routes/riskRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import { protectRoute } from './middleware/protectRoute.js';
 import zoneRoutes from './routes/zoneRoutes.js';
+import droneRoutes from './routes/droneRoutes.js';
 
 dotenv.config();
 
@@ -30,7 +31,8 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 app.get('/api/health', (_req, res) => {
@@ -41,8 +43,18 @@ app.use('/api/auth', authRoutes);
 app.use('/api/zones', protectRoute, zoneRoutes);
 app.use('/api/environment', protectRoute, environmentRoutes);
 app.use('/api/risk', protectRoute, riskRoutes);
+app.use('/api/drones', protectRoute, droneRoutes);
+app.use('/api/drone', protectRoute, droneRoutes);
 
 app.use((err, _req, res, _next) => {
+  if (err?.type === 'entity.too.large') {
+    console.error('CAPTURE ERROR: Payload too large', err);
+    return res.status(413).json({
+      success: false,
+      message: 'Payload too large. Reduce capture size and try again.',
+    });
+  }
+
   console.error('Unhandled server error:', err);
   res.status(500).json({
     success: false,

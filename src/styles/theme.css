@@ -2,36 +2,36 @@
 
 :root {
   --font-size: 16px;
-  --background: #0f172a;
+  --background: #0b1220;
   --foreground: #e2e8f0;
-  --card: #1e293b;
+  --card: #111827;
   --card-foreground: #e2e8f0;
-  --popover: #1e293b;
+  --popover: #111827;
   --popover-foreground: #e2e8f0;
   --primary: #3b82f6;
   --primary-foreground: #eff6ff;
-  --secondary: #334155;
+  --secondary: #1f2937;
   --secondary-foreground: #e2e8f0;
-  --muted: #1e293b;
+  --muted: #0f172a;
   --muted-foreground: #94a3b8;
-  --accent: #334155;
+  --accent: #1f2937;
   --accent-foreground: #e2e8f0;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   --input: transparent;
-  --input-background: #0f172a;
+  --input-background: #0b1220;
   --switch-background: #64748b;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --ring: #60a5fa;
-  --border: rgba(148, 163, 184, 0.22);
+  --border: rgba(148, 163, 184, 0.18);
   --chart-1: #3b82f6;
   --chart-2: #f59e0b;
   --chart-3: #ef4444;
   --chart-4: #60a5fa;
   --chart-5: #f97316;
-  --radius: 1rem;
-  --sidebar: #111b32;
+  --radius: 0.9rem;
+  --sidebar: #0f172a;
   --sidebar-foreground: #e2e8f0;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #eff6ff;
@@ -42,24 +42,24 @@
 }
 
 .dark {
-  --background: #0f172a;
+  --background: #0b1220;
   --foreground: #e2e8f0;
-  --card: #1e293b;
+  --card: #111827;
   --card-foreground: #e2e8f0;
-  --popover: #1e293b;
+  --popover: #111827;
   --popover-foreground: #e2e8f0;
   --primary: #3b82f6;
   --primary-foreground: #eff6ff;
-  --secondary: #334155;
+  --secondary: #1f2937;
   --secondary-foreground: #e2e8f0;
-  --muted: #1e293b;
+  --muted: #0f172a;
   --muted-foreground: #94a3b8;
-  --accent: #334155;
+  --accent: #1f2937;
   --accent-foreground: #e2e8f0;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: rgba(148, 163, 184, 0.22);
-  --input: rgba(15, 23, 42, 0.6);
+  --border: rgba(148, 163, 184, 0.18);
+  --input: rgba(11, 18, 32, 0.7);
   --ring: #60a5fa;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -68,7 +68,7 @@
   --chart-3: #ef4444;
   --chart-4: #60a5fa;
   --chart-5: #f97316;
-  --sidebar: #111b32;
+  --sidebar: #0f172a;
   --sidebar-foreground: #e2e8f0;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #eff6ff;
@@ -126,7 +126,8 @@
 
   body {
     @apply bg-background text-foreground;
-    background-image: radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.16), transparent 40%), radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.12), transparent 36%);
+    background-image: radial-gradient(circle at 12% -15%, rgba(59, 130, 246, 0.12), transparent 34%), radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.06), transparent 30%);
+    min-height: 100vh;
   }
 
   /**
@@ -139,21 +140,21 @@
   }
 
   h1 {
-    font-size: var(--text-2xl);
+    font-size: var(--text-xl);
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.35;
   }
 
   h2 {
-    font-size: var(--text-xl);
+    font-size: var(--text-lg);
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.35;
   }
 
   h3 {
-    font-size: var(--text-lg);
+    font-size: var(--text-base);
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.4;
   }
 
   h4 {
@@ -169,14 +170,48 @@
   }
 
   button {
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.4;
   }
 
   input {
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
     font-weight: var(--font-weight-normal);
-    line-height: 1.5;
+    line-height: 1.4;
+  }
+}
+
+@layer components {
+  .saas-surface {
+    @apply rounded-2xl border border-slate-500/20 bg-[#111827]/80 shadow-[0_18px_44px_-32px_rgba(2,6,23,0.95)] backdrop-blur-sm;
+  }
+
+  .saas-surface-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_52px_-34px_rgba(2,6,23,0.95)];
+  }
+
+  .saas-label {
+    @apply text-[11px] uppercase tracking-[0.16em] text-slate-400;
+  }
+
+  .saas-page {
+    @apply h-full w-full overflow-y-auto overflow-x-hidden p-6;
+  }
+
+  .saas-live-dot {
+    animation: saasPulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes saasPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(1.08);
   }
 }

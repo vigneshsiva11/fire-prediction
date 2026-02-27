@@ -53,18 +53,18 @@ export function Dashboard({ userRole }: DashboardProps) {
   );
 
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden">
-      <div className="space-y-6 p-6">
+    <div className="saas-page">
+      <div className="space-y-6">
         <motion.div className="grid grid-cols-1 gap-4 lg:grid-cols-3" initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
           {summary.map((item, index) => (
             <motion.div
               key={item.label}
-              className="rounded-2xl border border-slate-500/20 bg-[#1E293B]/80 p-5 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.95)]"
+              className="saas-surface saas-surface-hover p-5"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 * index }}
             >
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{item.label}</p>
+              <p className="saas-label">{item.label}</p>
               <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-sm ${item.tone}`}>{item.value}</p>
             </motion.div>
           ))}
@@ -73,7 +73,7 @@ export function Dashboard({ userRole }: DashboardProps) {
         <EnvironmentalStatusPanel />
 
         <motion.section
-          className="rounded-2xl border border-slate-500/20 bg-[#1E293B]/85 p-6 shadow-[0_24px_50px_-34px_rgba(15,23,42,0.95)]"
+          className="saas-surface p-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -83,7 +83,7 @@ export function Dashboard({ userRole }: DashboardProps) {
             <p className="text-sm text-slate-400">Last 20 records from the backend history endpoint.</p>
           </div>
 
-          <div className="h-[320px] rounded-2xl border border-slate-500/20 bg-[#0F172A]/70 p-3">
+          <div className="h-[320px] rounded-2xl border border-slate-500/20 bg-[#0b1220]/80 p-3">
             {historyLoading ? <div className="flex h-full items-center justify-center text-sm text-slate-400">Loading historical trend data...</div> : null}
 
             {!historyLoading && historyError ? (

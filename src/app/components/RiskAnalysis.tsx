@@ -1,108 +1,271 @@
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { BarChart, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import L from 'leaflet';
+import {
+  BarChart,
+  Bar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { TrendingUp, AlertTriangle, Wind, Droplets, Thermometer, Leaf } from 'lucide-react';
 import { MetricCard } from '@/app/components/MetricCard';
+import { useMonitoringContext } from '@/context/MonitoringContext';
+import { calculateRisk } from '@/utils/riskEngine';
 
-const riskFactorsData = [
-  { factor: 'Temperature', value: 85, fullMark: 100 },
-  { factor: 'Humidity', value: 35, fullMark: 100 },
-  { factor: 'Wind Speed', value: 65, fullMark: 100 },
-  { factor: 'Vegetation', value: 78, fullMark: 100 },
-  { factor: 'Terrain', value: 55, fullMark: 100 },
-  { factor: 'History', value: 72, fullMark: 100 },
-];
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
-const zoneComparison = [
-  { zone: 'Zone A', risk: 12, incidents: 2 },
-  { zone: 'Zone B', risk: 45, incidents: 5 },
-  { zone: 'Zone C', risk: 78, incidents: 12 },
-  { zone: 'Zone D', risk: 18, incidents: 3 },
-  { zone: 'Zone E', risk: 82, incidents: 11 },
-];
+function toPercent(value: number, max: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) {
+    return 0;
+  }
+
+  return clamp((value / max) * 100, 0, 100);
+}
+
+function buildDroneIcon(color: string) {
+  return L.divIcon({
+    className: 'risk-drone-marker',
+    html: `<div style="width:12px;height:12px;border-radius:9999px;background:${color};box-shadow:0 0 0 5px rgba(15,23,42,0.5),0 0 14px ${color};border:2px solid rgba(226,232,240,0.95);"></div>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+}
+
+function MapViewport({ lat, lon, zoom }: { lat: number; lon: number; zoom: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView([lat, lon], zoom, { animate: true });
+  }, [map, lat, lon, zoom]);
+
+  return null;
+}
+
+function CountUp({ value, decimals = 0 }: { value: number; decimals?: number }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    let frameId = 0;
+    const duration = 450;
+    const start = performance.now();
+    const initialValue = displayValue;
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextValue = initialValue + (value - initialValue) * eased;
+      setDisplayValue(nextValue);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick);
+      }
+    };
+
+    frameId = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frameId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return <>{displayValue.toFixed(decimals)}</>;
+}
 
 export function RiskAnalysis() {
+  const { environmentalData, activeLocation, riskData, previousRiskScore, riskChange, refreshEnvironmentalData, activeDrones } = useMonitoringContext();
+
+  const calculatedRisk = useMemo(() => calculateRisk(environmentalData), [environmentalData]);
+
+  const dynamicRisk = useMemo(
+    () => ({
+      score: Number((riskData?.riskScore ?? riskData?.score ?? calculatedRisk.score ?? 0).toFixed(1)),
+      level: riskData?.riskLevel || riskData?.level || calculatedRisk.level || 'N/A',
+      recommendedAction: riskData?.recommendedAction || 'Continue monitoring environmental changes.',
+    }),
+    [riskData, calculatedRisk],
+  );
+
+  const riskColor =
+    dynamicRisk.level === 'Critical'
+      ? '#ef4444'
+      : dynamicRisk.level === 'High'
+        ? '#f97316'
+        : dynamicRisk.level === 'Moderate'
+          ? '#f59e0b'
+          : '#3b82f6';
+
+  const criticalZones = dynamicRisk.score > 85 ? 2 : dynamicRisk.score > 70 ? 1 : 0;
+  const monitoredAreas = activeLocation?.type === 'forest' ? 5 : 1;
+  const riskChangeValue = Number((riskChange ?? 0).toFixed(1));
+  const riskChangeText = `${riskChangeValue >= 0 ? '+' : ''}${riskChangeValue}%`;
+  const riskTrendColor = riskChangeValue > 0 ? '#FF4C4C' : '#10B981';
+  const riskMapZoom = activeLocation?.type === 'forest' ? 9 : 14;
+  const circleProgress = clamp(dynamicRisk.score, 0, 100);
+  const circleCircumference = 2 * Math.PI * 38;
+  const circleOffset = circleCircumference - (circleProgress / 100) * circleCircumference;
+
+  const activeLocationDrones = useMemo(() => activeDrones.filter((drone: any) => drone.status === 'active'), [activeDrones]);
+
+  const radarData = useMemo(
+    () => [
+      { factor: 'Temperature', value: toPercent(Number(environmentalData?.temperature ?? 0), 50), fullMark: 100 },
+      { factor: 'Humidity', value: clamp(Number(environmentalData?.humidity ?? 0), 0, 100), fullMark: 100 },
+      { factor: 'Wind Speed', value: toPercent(Number(environmentalData?.windSpeed ?? 0), 50), fullMark: 100 },
+      { factor: 'Dryness', value: clamp(Number(environmentalData?.drynessIndex ?? 0), 0, 100), fullMark: 100 },
+      { factor: 'Humidity Inv.', value: clamp(100 - Number(environmentalData?.humidity ?? 0), 0, 100), fullMark: 100 },
+    ],
+    [environmentalData],
+  );
+
+  const zoneComparison = useMemo(() => {
+    const base = Number(dynamicRisk.score || 0);
+    return [
+      { zone: 'Zone A', risk: clamp(base, 0, 100) },
+      { zone: 'Zone B', risk: clamp(base - Math.random() * 6, 0, 100) },
+      { zone: 'Zone C', risk: clamp(base + Math.random() * 8, 0, 100) },
+      { zone: 'Zone D', risk: clamp(base - Math.random() * 4, 0, 100) },
+      { zone: 'Zone E', risk: clamp(base + Math.random() * 5, 0, 100) },
+    ];
+  }, [dynamicRisk.score]);
+
+  useEffect(() => {
+    if (activeLocation) {
+      refreshEnvironmentalData(activeLocation);
+    }
+  }, [activeLocation?.id, activeLocation?.lat, activeLocation?.lon, refreshEnvironmentalData]);
+
+  const temperature = Number(environmentalData?.temperature ?? 0);
+  const humidity = Number(environmentalData?.humidity ?? 0);
+  const windSpeed = Number(environmentalData?.windSpeed ?? 0);
+  const drynessIndex = Number(environmentalData?.drynessIndex ?? 0);
+
   return (
-    <div className="flex-1 overflow-auto p-6">
-      {/* Header */}
-      <motion.div
-        className="mb-6"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center gap-3 mb-2">
-          <TrendingUp className="w-6 h-6 text-[#FFA500]" />
-          <h2 className="text-white">Risk Analysis Dashboard</h2>
+    <div className="saas-page">
+      <motion.div className="mb-6" initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="mb-2 flex items-center gap-3">
+          <TrendingUp className="h-5 w-5 text-[#f59e0b]" />
+          <h2 className="text-slate-100">Risk Analysis Dashboard</h2>
+          <span className="saas-live-dot text-xs text-emerald-400">Real-Time Monitoring</span>
         </div>
-        <p className="text-gray-400">Comprehensive fire risk assessment and analytics</p>
+        <p className="text-sm text-slate-400">Live risk intelligence, drone coverage, and environmental drivers</p>
       </motion.div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <MetricCard
-          title="Overall Risk Level"
-          value="High"
-          icon={AlertTriangle}
-          color="#FF4C4C"
-          delay={0.1}
-        />
-        <MetricCard
-          title="Critical Zones"
-          value="2"
-          icon={TrendingUp}
-          color="#FF4C4C"
-          trend="+1"
-          delay={0.2}
-        />
-        <MetricCard
-          title="Risk Increase"
-          value="+15%"
-          icon={Wind}
-          color="#FFA500"
-          trend="+5%"
-          delay={0.3}
-        />
-        <MetricCard
-          title="Monitored Areas"
-          value="5"
-          icon={Leaf}
-          color="#3B82F6"
-          delay={0.4}
-        />
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <motion.div className="saas-surface saas-surface-hover p-5" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <div className="mb-4 flex items-center justify-between">
+            <p className="saas-label">Risk Score</p>
+            <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ backgroundColor: `${riskColor}20`, color: riskColor }}>
+              {dynamicRisk.level}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-2xl font-semibold text-slate-100">
+                <CountUp value={dynamicRisk.score} decimals={1} />%
+              </p>
+              <p className="text-xs text-slate-400">Overall Risk Index</p>
+            </div>
+            <svg width="92" height="92" viewBox="0 0 92 92" className="-rotate-90">
+              <circle cx="46" cy="46" r="38" stroke="rgba(148,163,184,0.22)" strokeWidth="8" fill="transparent" />
+              <circle
+                cx="46"
+                cy="46"
+                r="38"
+                stroke={riskColor}
+                strokeWidth="8"
+                fill="transparent"
+                strokeLinecap="round"
+                strokeDasharray={circleCircumference}
+                strokeDashoffset={circleOffset}
+                style={{ transition: 'stroke-dashoffset 450ms ease' }}
+              />
+            </svg>
+          </div>
+        </motion.div>
+
+        <MetricCard title="Critical Zones" value={`${criticalZones}`} icon={AlertTriangle} color="#EF4444" delay={0.12} />
+        <MetricCard title="Risk Delta" value={riskChangeText} icon={Wind} color={riskTrendColor} trend={riskChangeText} delay={0.18} />
+        <MetricCard title="Monitored Areas" value={`${monitoredAreas}`} icon={Leaf} color="#3B82F6" delay={0.24} />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Risk Factors Radar */}
-        <motion.div
-          className="bg-[#1E293B] rounded-xl border border-white/10 overflow-hidden"
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.5 }}
-        >
-          <div className="p-4 border-b border-white/10">
-            <h3 className="text-white">Risk Contributing Factors</h3>
-            <p className="text-sm text-gray-400">Multi-dimensional risk assessment</p>
+      {dynamicRisk.level === 'Critical' ? (
+        <div className="mb-6 rounded-xl border-l-4 border-red-500 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          Critical fire risk detected. Escalate monitoring and response readiness for this location.
+        </div>
+      ) : null}
+
+      <motion.div className="saas-surface mb-6 overflow-hidden" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <div className="border-b border-slate-500/20 p-4">
+          <h3 className="text-slate-100">Active Drone Coverage</h3>
+          <p className="text-sm text-slate-400">All active drones for the selected monitoring location</p>
+        </div>
+
+        {activeLocation ? (
+          <div className="h-[320px] w-full">
+            <MapContainer center={[activeLocation.lat, activeLocation.lon]} zoom={riskMapZoom} className="h-full w-full">
+              <MapViewport lat={activeLocation.lat} lon={activeLocation.lon} zoom={riskMapZoom} />
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <Marker position={[activeLocation.lat, activeLocation.lon]} icon={buildDroneIcon('#3B82F6')}>
+                <Popup>
+                  <div className="text-sm">
+                    <p className="font-semibold">{activeLocation.name}</p>
+                    <p>Monitoring Location</p>
+                  </div>
+                </Popup>
+              </Marker>
+              {activeLocationDrones.map((drone: any) => (
+                <Marker key={drone._id} position={[drone.lat, drone.lon]} icon={buildDroneIcon(drone.battery < 20 ? '#EF4444' : '#F59E0B')}>
+                  <Popup>
+                    <div className="text-sm">
+                      <p className="font-semibold">{drone.name}</p>
+                      <p>Battery: {drone.battery}%</p>
+                      <p>Signal: {drone.signal}%</p>
+                      <p>Status: {drone.status}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
           </div>
-          <div className="p-6">
-            <ResponsiveContainer width="100%" height={350}>
-              <RadarChart data={riskFactorsData}>
-                <PolarGrid stroke="#374151" />
-                <PolarAngleAxis dataKey="factor" stroke="#9CA3AF" />
-                <PolarRadiusAxis stroke="#9CA3AF" />
-                <Radar
-                  name="Risk Level"
-                  dataKey="value"
-                  stroke="#FFA500"
-                  fill="#FFA500"
-                  fillOpacity={0.5}
-                  strokeWidth={2}
-                />
+        ) : (
+          <div className="p-4 text-sm text-slate-400">Select a monitoring location to view drone coverage.</div>
+        )}
+
+        {activeLocation && activeLocationDrones.length === 0 ? (
+          <div className="border-t border-slate-500/20 px-4 py-3 text-sm text-slate-400">No active drones for this location.</div>
+        ) : null}
+      </motion.div>
+
+      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <motion.div className="saas-surface overflow-hidden" initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.36 }}>
+          <div className="border-b border-slate-500/20 p-4">
+            <h3 className="text-slate-100">Risk Contributing Factors</h3>
+            <p className="text-sm text-slate-400">Normalized environmental signals</p>
+          </div>
+          <div className="p-4">
+            <ResponsiveContainer width="100%" height={320}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="rgba(148,163,184,0.22)" />
+                <PolarAngleAxis dataKey="factor" stroke="#94A3B8" />
+                <PolarRadiusAxis stroke="#94A3B8" />
+                <Radar name="Risk Level" dataKey="value" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.28} strokeWidth={2} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#1E293B',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '0.5rem',
-                    color: '#fff'
+                    backgroundColor: '#111827',
+                    border: '1px solid rgba(148,163,184,0.24)',
+                    borderRadius: '12px',
+                    color: '#E2E8F0',
                   }}
                 />
               </RadarChart>
@@ -110,142 +273,54 @@ export function RiskAnalysis() {
           </div>
         </motion.div>
 
-        {/* Zone Comparison */}
-        <motion.div
-          className="bg-[#1E293B] rounded-xl border border-white/10 overflow-hidden"
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.6 }}
-        >
-          <div className="p-4 border-b border-white/10">
-            <h3 className="text-white">Zone Risk Comparison</h3>
-            <p className="text-sm text-gray-400">Current risk scores and incident history</p>
+        <motion.div className="saas-surface overflow-hidden" initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.42 }}>
+          <div className="border-b border-slate-500/20 p-4">
+            <h3 className="text-slate-100">Zone Comparison</h3>
+            <p className="text-sm text-slate-400">Relative risk distribution</p>
           </div>
-          <div className="p-6">
-            <ResponsiveContainer width="100%" height={350}>
+          <div className="p-4">
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart data={zoneComparison}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="zone" stroke="#9CA3AF" />
-                <YAxis stroke="#9CA3AF" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.18)" />
+                <XAxis dataKey="zone" stroke="#94A3B8" />
+                <YAxis stroke="#94A3B8" />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#1E293B',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '0.5rem',
-                    color: '#fff'
+                    backgroundColor: '#111827',
+                    border: '1px solid rgba(148,163,184,0.24)',
+                    borderRadius: '12px',
+                    color: '#E2E8F0',
                   }}
                 />
-                <Legend />
-                <Bar dataKey="risk" fill="#FFA500" name="Risk Score %" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="incidents" fill="#FF4C4C" name="Past Incidents" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="risk" fill="#3B82F6" radius={[8, 8, 0, 0]} animationDuration={650} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
       </div>
 
-      {/* Environmental Factors Grid */}
-      <motion.div
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.7 }}
-      >
-        <div className="bg-gradient-to-br from-[#FF4C4C]/20 to-[#FF4C4C]/5 rounded-xl p-6 border border-[#FF4C4C]/20">
-          <div className="flex items-center gap-3 mb-3">
-            <Thermometer className="w-6 h-6 text-[#FF4C4C]" />
-            <h4 className="text-white">Temperature</h4>
-          </div>
-          <p className="text-3xl text-white mb-2">38°C</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#FF4C4C] w-[85%]" />
-            </div>
-            <span className="text-xs text-gray-400">85%</span>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Critical threshold</p>
+      <motion.div className="saas-surface border-l-4 border-l-[#3B82F6] p-5" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.48 }}>
+        <div className="mb-3 flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-[#F59E0B]" />
+          <h3 className="text-slate-100">{dynamicRisk.level} Assessment Summary</h3>
         </div>
-
-        <div className="bg-gradient-to-br from-[#1E90FF]/20 to-[#1E90FF]/5 rounded-xl p-6 border border-[#1E90FF]/20">
-          <div className="flex items-center gap-3 mb-3">
-            <Droplets className="w-6 h-6 text-[#1E90FF]" />
-            <h4 className="text-white">Humidity</h4>
+        <p className="mb-3 text-sm leading-6 text-slate-300">
+          Current conditions indicate <span className="font-semibold text-slate-100">{dynamicRisk.level.toUpperCase()}</span> fire risk with score{' '}
+          <span className="font-semibold text-slate-100">{dynamicRisk.score}</span>. Temperature ({temperature.toFixed(1)} deg C), humidity ({humidity.toFixed(1)}%),
+          wind speed ({windSpeed.toFixed(1)} km/h), and dryness ({drynessIndex.toFixed(1)}%) are being continuously evaluated.
+        </p>
+        <div className="flex flex-wrap gap-3 text-sm">
+          <div className="rounded-lg bg-slate-900/55 px-3 py-2">
+            <span className="text-slate-400">Recommended Action:</span> <span className="text-slate-100">{dynamicRisk.recommendedAction}</span>
           </div>
-          <p className="text-3xl text-white mb-2">25%</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#1E90FF] w-[25%]" />
-            </div>
-            <span className="text-xs text-gray-400">25%</span>
+          <div className="rounded-lg bg-slate-900/55 px-3 py-2">
+            <span className="text-slate-400">Location:</span> <span className="text-slate-100">{activeLocation?.name || 'N/A'}</span>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Very low - high risk</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-[#FFA500]/20 to-[#FFA500]/5 rounded-xl p-6 border border-[#FFA500]/20">
-          <div className="flex items-center gap-3 mb-3">
-            <Wind className="w-6 h-6 text-[#FFA500]" />
-            <h4 className="text-white">Wind Speed</h4>
-          </div>
-          <p className="text-3xl text-white mb-2">25 km/h</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#FFA500] w-[65%]" />
-            </div>
-            <span className="text-xs text-gray-400">65%</span>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Moderate to high</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-[#3B82F6]/20 to-[#3B82F6]/5 rounded-xl p-6 border border-[#3B82F6]/20">
-          <div className="flex items-center gap-3 mb-3">
-            <Leaf className="w-6 h-6 text-[#3B82F6]" />
-            <h4 className="text-white">Vegetation</h4>
-          </div>
-          <p className="text-3xl text-white mb-2">78%</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-              <div className="h-full bg-[#FFA500] w-[78%]" />
-            </div>
-            <span className="text-xs text-gray-400">78%</span>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Dryness level</p>
-        </div>
-      </motion.div>
-
-      {/* Risk Assessment Summary */}
-      <motion.div
-        className="bg-gradient-to-r from-[#FF4C4C]/10 via-[#FFA500]/10 to-[#FF4C4C]/10 border border-[#FF4C4C]/30 rounded-xl p-6"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
-      >
-        <div className="flex items-start gap-4">
-          <AlertTriangle className="w-8 h-8 text-[#FF4C4C] flex-shrink-0 mt-1" />
-          <div className="flex-1">
-            <h3 className="text-white mb-2">Critical Risk Assessment</h3>
-            <p className="text-gray-300 mb-4">
-              Current environmental conditions indicate <span className="text-[#FF4C4C] font-semibold">CRITICAL</span> fire risk levels across 2 zones. 
-              Combination of high temperature (38°C), low humidity (25%), strong winds (25 km/h), and dry vegetation (78%) creates 
-              extremely favorable conditions for rapid fire spread.
-            </p>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <div className="bg-white/10 px-4 py-2 rounded-lg">
-                <span className="text-gray-400">Recommended Action: </span>
-                <span className="text-white">Deploy additional monitoring drones</span>
-              </div>
-              <div className="bg-white/10 px-4 py-2 rounded-lg">
-                <span className="text-gray-400">Priority Zones: </span>
-                <span className="text-white">Zone C, Zone E</span>
-              </div>
-              <div className="bg-white/10 px-4 py-2 rounded-lg">
-                <span className="text-gray-400">Risk Duration: </span>
-                <span className="text-white">Next 6-8 hours</span>
-              </div>
-            </div>
+          <div className="rounded-lg bg-slate-900/55 px-3 py-2">
+            <span className="text-slate-400">Previous Risk:</span> <span className="text-slate-100">{previousRiskScore ?? 'N/A'}</span>
           </div>
         </div>
       </motion.div>
     </div>
   );
 }
-

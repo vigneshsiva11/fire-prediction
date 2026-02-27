@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect } from 'react';
 import L from 'leaflet';
 import { AlertTriangle, CheckCircle2, Clock3, Flame, Wind } from 'lucide-react';
-import { MapContainer, Marker, Popup, Rectangle, TileLayer, useMap } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, Rectangle, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEnvironmentalDataContext } from '@/layer1/EnvironmentalDataContext';
 
@@ -58,7 +58,7 @@ function getZoneStyle(riskLevel = 'Low') {
 function ViewportSync({ activeForest, monitoringMode, location }) {
   const map = useMap();
 
-  useMemo(() => {
+  useEffect(() => {
     if (monitoringMode === 'forest' && activeForest) {
       map.setView([activeForest.center.lat, activeForest.center.lng], 7);
       map.fitBounds(activeForest.bounds, { padding: [40, 40] });
@@ -66,7 +66,7 @@ function ViewportSync({ activeForest, monitoringMode, location }) {
     }
 
     if (monitoringMode === 'live' && location?.lat && location?.lon) {
-      map.setView([location.lat, location.lon], 9);
+      map.setView([location.lat, location.lon], 10);
     }
   }, [map, activeForest, monitoringMode, location?.lat, location?.lon]);
 
@@ -85,7 +85,7 @@ function getForestMarkerIcon(priority = 'Medium') {
 }
 
 export default function SatelliteMap() {
-  const { monitoringMode, activeForest, location, data, riskData, loading, refreshing, error, refreshData } = useEnvironmentalDataContext();
+  const { monitoringMode, activeForest, activeCommunityLocation, location, data, riskData, loading, refreshing, error, refreshData } = useEnvironmentalDataContext();
 
   const riskStyle = getZoneStyle(riskData?.riskLevel || 'Low');
   const lastUpdated = data?.createdAt || riskData?.createdAt || null;
@@ -113,7 +113,7 @@ export default function SatelliteMap() {
 
   const initialCenter = monitoringMode === 'forest' && activeForest
     ? [activeForest.center.lat, activeForest.center.lng]
-    : [location?.lat ?? 0, location?.lon ?? 0];
+    : [location?.lat ?? 20.5937, location?.lon ?? 78.9629];
 
   return (
     <div className="p-6 space-y-5 bg-[#0B1220] min-h-full text-[#E5E7EB]">
@@ -121,7 +121,10 @@ export default function SatelliteMap() {
         <div>
           <h2 className="text-2xl font-semibold">Satellite Monitoring</h2>
           <p className="text-sm text-slate-400">
-            Currently Monitoring: {monitoringMode === 'forest' && activeForest ? `${activeForest.name} (${activeForest.country})` : 'Community Geolocation'}
+            Currently Monitoring:{' '}
+            {monitoringMode === 'forest' && activeForest
+              ? `${activeForest.name} (${activeForest.country})`
+              : activeCommunityLocation?.name || 'Community Geolocation'}
           </p>
         </div>
 
@@ -162,15 +165,35 @@ export default function SatelliteMap() {
               ) : null}
 
               {monitoringMode === 'live' && location?.lat && location?.lon ? (
-                <Marker
-                  position={[location.lat, location.lon]}
-                  icon={L.divIcon({
-                    className: 'community-center-marker',
-                    html: '<div style="width:14px;height:14px;border-radius:9999px;background:#3B82F6;box-shadow:0 0 0 6px rgba(15,23,42,0.5),0 0 18px rgba(59,130,246,0.8);border:2px solid rgba(226,232,240,0.9);"></div>',
-                    iconSize: [14, 14],
-                    iconAnchor: [7, 7],
-                  })}
-                />
+                <>
+                  <Circle
+                    center={[location.lat, location.lon]}
+                    radius={5000}
+                    pathOptions={{
+                      color: '#f59e0b',
+                      fillColor: '#f59e0b',
+                      fillOpacity: 0.2,
+                      weight: 2,
+                    }}
+                  />
+                  <Marker
+                    position={[location.lat, location.lon]}
+                    icon={L.divIcon({
+                      className: 'community-center-marker',
+                      html: '<div style="width:14px;height:14px;border-radius:9999px;background:#f59e0b;box-shadow:0 0 0 6px rgba(15,23,42,0.5),0 0 18px rgba(245,158,11,0.85);border:2px solid rgba(226,232,240,0.9);"></div>',
+                      iconSize: [14, 14],
+                      iconAnchor: [7, 7],
+                    })}
+                  >
+                    <Popup>
+                      <div className="text-sm">
+                        <p className="font-semibold">{location?.name || 'Selected City'}</p>
+                        <p>Coordinates: {location.lat}, {location.lon}</p>
+                        <p>Monitoring Active</p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                </>
               ) : null}
             </MapContainer>
           </div>
@@ -207,10 +230,35 @@ export default function SatelliteMap() {
                 <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-slate-400" /> Last Updated: {formatTimestamp(lastUpdated)}</p>
               </div>
             </div>
+          ) : monitoringMode === 'live' && location?.lat && location?.lon ? (
+            <div className="space-y-3 text-sm">
+              <p><span className="text-slate-400">City:</span> {location?.name || 'Selected Location'}</p>
+              <p><span className="text-slate-400">Coordinates:</span> {location.lat}, {location.lon}</p>
+
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-[#f59e0b]/40 bg-[#f59e0b]/15 px-3 py-1 text-xs text-[#fcd34d]">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Monitoring Active
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-400">Risk Level</span>
+                  <span className="rounded-full bg-[#F59E0B]/20 px-2 py-0.5 text-xs text-[#FCD34D]">{riskData?.riskLevel || '--'}</span>
+                </div>
+                <p className="mt-2 text-sm">Risk Score: {riskData?.riskScore ?? '--'}</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="flex items-center gap-2"><Flame className="h-4 w-4 text-[#F59E0B]" /> Temperature: {data?.temperature ?? '--'} deg C</p>
+                <p className="flex items-center gap-2"><Wind className="h-4 w-4 text-[#60A5FA]" /> Wind Speed: {data?.windSpeed ?? '--'} km/h</p>
+                <p className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-[#FB923C]" /> Dryness Index: {data?.drynessIndex ?? '--'}</p>
+                <p className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-slate-400" /> Last Updated: {formatTimestamp(lastUpdated)}</p>
+              </div>
+            </div>
           ) : (
             <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 text-sm text-slate-300">
-              No active forest selected.
-              <p className="mt-1 text-slate-400">Please select a forest from Live Feed.</p>
+              No active location selected.
+              <p className="mt-1 text-slate-400">Enable geolocation or search a city to start community monitoring.</p>
             </div>
           )}
         </div>

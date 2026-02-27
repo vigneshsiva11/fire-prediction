@@ -4,7 +4,7 @@ import { fetchEnvironmentalData, fetchEnvironmentalHistory } from '@/layer1/weat
 const REFRESH_INTERVAL_MS = 60_000;
 
 const FOREST_SELECTION_MESSAGE = 'Select a forest zone to begin monitoring.';
-const COMMUNITY_PERMISSION_MESSAGE = 'Location permission required for community monitoring.';
+const COMMUNITY_PERMISSION_MESSAGE = 'Allow location access or search a city to start community monitoring.';
 
 export function useEnvironmentalData({ mode, activeForest, lat, lon }) {
   const [data, setData] = useState(null);

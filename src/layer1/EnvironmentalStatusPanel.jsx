@@ -6,11 +6,12 @@ import { Button } from '@/app/components/ui/button';
 const INFO_MESSAGES = new Set([
   'Select a forest zone to begin monitoring.',
   'Location permission required for community monitoring.',
+  'Allow location access or search a city to start community monitoring.',
 ]);
 
 function MetricItem({ icon: Icon, label, value, unit }) {
   return (
-    <div className="rounded-2xl border border-slate-500/20 bg-slate-900/40 p-4 transition-colors hover:border-slate-400/40">
+    <div className="saas-surface saas-surface-hover p-4">
       <div className="mb-3 flex items-center gap-2 text-slate-400">
         <Icon className="h-4 w-4 text-[#60a5fa]" />
         <span className="text-xs tracking-wide uppercase">{label}</span>
@@ -32,25 +33,27 @@ function formatTimestamp(timestamp) {
 }
 
 export function EnvironmentalStatusPanel() {
-  const { data, riskData, loading, refreshing, error, zoneInfo, monitoringMode, refreshData } = useEnvironmentalDataContext();
+  const { data, riskData, loading, refreshing, error, zoneInfo, monitoringMode, refreshData, location, communityStatus } = useEnvironmentalDataContext();
 
   const lastUpdated = data?.createdAt || data?.timestamp;
   const isInfoMessage = error && INFO_MESSAGES.has(error);
 
   return (
-    <section id="live-feed-panel" className="rounded-2xl border border-slate-500/20 bg-gradient-to-br from-[#1e293b]/95 via-[#1e293b]/90 to-[#0f172a] p-6 shadow-[0_30px_60px_-35px_rgba(15,23,42,0.95)]">
+    <section id="live-feed-panel" className="saas-surface p-6">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Layer 1</p>
+          <p className="saas-label">Layer 1</p>
           <h2 className="text-2xl font-semibold text-slate-100">Backend Environmental Feed</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Mode: {monitoringMode === 'forest' ? 'Forest Monitoring' : 'Community Monitoring'} | Forest: {zoneInfo?.name || '--'} | Country: {zoneInfo?.country || '--'}
+            {monitoringMode === 'forest'
+              ? `Mode: Forest Monitoring | Forest: ${zoneInfo?.name || '--'} | Country: ${zoneInfo?.country || '--'}`
+              : `Mode: Community Monitoring | Location: ${location?.name || '--'}`}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <motion.div
-            className="inline-flex items-center gap-2 rounded-full border border-[#3b82f6]/40 bg-[#3b82f6]/15 px-4 py-2 text-sm text-[#bfdbfe]"
+            className="inline-flex items-center gap-2 rounded-full border border-[#3b82f6]/30 bg-[#3b82f6]/10 px-3 py-1.5 text-xs text-[#bfdbfe]"
             animate={{ boxShadow: ['0 0 0 0 rgba(59,130,246,0.6)', '0 0 0 10px rgba(59,130,246,0)', '0 0 0 0 rgba(59,130,246,0)'] }}
             transition={{ duration: 2, repeat: Infinity }}
           >
@@ -74,7 +77,7 @@ export function EnvironmentalStatusPanel() {
         </div>
       </div>
 
-      {loading ? <div className="rounded-2xl border border-slate-600/30 bg-slate-900/40 p-4 text-sm text-slate-300">Fetching data from backend API...</div> : null}
+      {loading ? <div className="rounded-2xl border border-slate-600/30 bg-[#0b1220]/70 p-4 text-sm text-slate-300">Fetching data from backend API...</div> : null}
 
       {error ? (
         <div
@@ -83,6 +86,18 @@ export function EnvironmentalStatusPanel() {
           }`}
         >
           {error}
+        </div>
+      ) : null}
+
+      {monitoringMode === 'live' && communityStatus?.permissionDenied ? (
+        <div className="mb-5 rounded-2xl border border-slate-600/40 bg-slate-900/40 p-4 text-sm text-slate-300">
+          Location permission denied. You can manually enter a city to monitor.
+        </div>
+      ) : null}
+
+      {monitoringMode === 'live' && location?.name ? (
+        <div className="mb-5 rounded-2xl border border-[#3b82f6]/30 bg-[#3b82f6]/10 p-4 text-sm text-[#bfdbfe]">
+          Monitoring: {location.name}
         </div>
       ) : null}
 
@@ -95,7 +110,7 @@ export function EnvironmentalStatusPanel() {
         <MetricItem icon={Cloud} label="Weather" value={data?.weatherDescription ? data.weatherDescription.replace(/\b\w/g, (char) => char.toUpperCase()) : '--'} unit="" />
       </div>
 
-      <div className="mt-6 grid gap-3 rounded-2xl border border-slate-500/20 bg-slate-900/40 p-4 text-sm text-slate-300 md:grid-cols-2">
+      <div className="mt-6 grid gap-3 rounded-2xl border border-slate-500/20 bg-[#0b1220]/70 p-4 text-sm text-slate-300 md:grid-cols-2">
         <span>Last Updated: {formatTimestamp(lastUpdated)}</span>
         <span>Risk Score: {riskData?.riskScore ?? '--'}</span>
         <span>Risk Level: {riskData?.riskLevel ?? '--'}</span>

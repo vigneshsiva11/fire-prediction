@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { LoginPage } from '@/app/components/LoginPage';
 import { Sidebar } from '@/app/components/Sidebar';
 import { TopNav } from '@/app/components/TopNav';
@@ -14,16 +15,17 @@ import { Toaster } from '@/app/components/ui/sonner';
 import { EnvironmentalDataProvider } from '@/layer1/EnvironmentalDataContext';
 import { MonitoringProvider, useMonitoringContext } from '@/app/context/MonitoringContext';
 import { getCurrentAdmin, loginAdmin, logoutAdmin } from '@/app/services/authService';
+import {
+  requestBrowserGeolocation,
+  reverseGeocodeToCity,
+  searchCityLocation,
+  type CommunityLocation,
+} from '@/app/controllers/communityMonitoringController';
 import SatelliteMap from '@/pages/SatelliteMap.jsx';
 import { toast } from 'sonner';
 
 type UserRole = 'admin';
 type MonitoringMode = 'forest' | 'live';
-
-interface LiveCoordinates {
-  lat: number;
-  lon: number;
-}
 
 interface AdminSession {
   id: string;
@@ -33,16 +35,18 @@ interface AdminSession {
 }
 
 function AppContent() {
-  const { activeForest, setActiveForest, forests } = useMonitoringContext();
+  const { activeForest, setActiveForest, forests, activeCommunityLocation, setActiveCommunityLocation } = useMonitoringContext();
 
   const [session, setSession] = useState<AdminSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState('dashboard');
 
   const [monitoringMode, setMonitoringMode] = useState<MonitoringMode>('forest');
-  const [liveCoordinates, setLiveCoordinates] = useState<LiveCoordinates | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [citySearchLoading, setCitySearchLoading] = useState(false);
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationPermissionError, setLocationPermissionError] = useState('');
+  const [hasAttemptedAutoLiveLookup, setHasAttemptedAutoLiveLookup] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
@@ -80,54 +84,79 @@ function AppContent() {
     };
   }, []);
 
-  const requestLiveLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationPermissionError('Location permission required for community monitoring.');
-      toast.error('Geolocation is not supported in this browser.');
-      return;
-    }
-
+  const requestLiveLocation = useCallback(async () => {
     setLocationLoading(true);
     setLocationPermissionError('');
+    setLocationPermissionDenied(false);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLiveCoordinates({
-          lat: Number(position.coords.latitude.toFixed(6)),
-          lon: Number(position.coords.longitude.toFixed(6)),
-        });
+    try {
+      const coordinates = await requestBrowserGeolocation();
+      const locationName = await reverseGeocodeToCity(coordinates.lat, coordinates.lon).catch(() => 'Current Location');
+
+      const nextLocation: CommunityLocation = {
+        name: locationName,
+        lat: coordinates.lat,
+        lon: coordinates.lon,
+      };
+
+      setActiveCommunityLocation(nextLocation);
+      setLocationPermissionError('');
+      setLocationPermissionDenied(false);
+    } catch (error) {
+      setActiveCommunityLocation(null);
+
+      const geoError = error as GeolocationPositionError;
+      if (geoError?.code === geoError.PERMISSION_DENIED) {
+        setLocationPermissionDenied(true);
+        setLocationPermissionError('Location permission denied. You can manually enter a city to monitor.');
+        return;
+      }
+
+      setLocationPermissionError('Unable to retrieve live location. Please retry.');
+      toast.error('Unable to fetch location data.');
+    } finally {
+      setLocationLoading(false);
+    }
+  }, [setActiveCommunityLocation]);
+
+  const handleCommunityCitySearch = useCallback(
+    async (cityQuery: string) => {
+      setCitySearchLoading(true);
+
+      try {
+        const cityLocation = await searchCityLocation(cityQuery);
+        setActiveCommunityLocation(cityLocation);
         setLocationPermissionError('');
-        setLocationLoading(false);
-      },
-      (error) => {
-        setLocationLoading(false);
-        setLiveCoordinates(null);
+        toast.success(`Monitoring: ${cityLocation.name}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to fetch location data.';
+        setLocationPermissionError(message);
 
-        if (error.code === error.PERMISSION_DENIED) {
-          setLocationPermissionError('Location permission required for community monitoring.');
-          return;
+        if (message.includes('City not found')) {
+          toast.error('City not found. Please try another location.');
+        } else {
+          toast.error('Unable to fetch location data.');
         }
-
-        setLocationPermissionError('Unable to retrieve live location. Please retry.');
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-      },
-    );
-  }, []);
+      } finally {
+        setCitySearchLoading(false);
+      }
+    },
+    [setActiveCommunityLocation],
+  );
 
   useEffect(() => {
     if (monitoringMode === 'forest') {
-      setLiveCoordinates(null);
       setLocationPermissionError('');
+      setLocationPermissionDenied(false);
+      setHasAttemptedAutoLiveLookup(false);
       return;
     }
 
-    if (session && monitoringMode === 'live' && !liveCoordinates && !locationLoading) {
+    if (session && monitoringMode === 'live' && !activeCommunityLocation && !locationLoading && !locationPermissionDenied && !hasAttemptedAutoLiveLookup) {
+      setHasAttemptedAutoLiveLookup(true);
       requestLiveLocation();
     }
-  }, [session, monitoringMode, liveCoordinates, locationLoading, requestLiveLocation]);
+  }, [session, monitoringMode, activeCommunityLocation, locationLoading, requestLiveLocation, locationPermissionDenied, hasAttemptedAutoLiveLookup]);
 
   const handleLogin = async ({ username, password }: { username: string; password: string }) => {
     const admin = await loginAdmin(username, password);
@@ -149,8 +178,9 @@ function AppContent() {
     } finally {
       setSession(null);
       setCurrentPage('dashboard');
-      setLiveCoordinates(null);
+      setActiveCommunityLocation(null);
       setLocationPermissionError('');
+      setLocationPermissionDenied(false);
       toast.info('Logged out successfully');
     }
   };
@@ -204,8 +234,16 @@ function AppContent() {
   }
 
   return (
-    <EnvironmentalDataProvider mode={monitoringMode} activeForest={activeForest} liveCoordinates={liveCoordinates}>
-      <div className="h-screen w-screen flex flex-col bg-[#0F172A] overflow-hidden">
+    <EnvironmentalDataProvider
+      mode={monitoringMode}
+      activeForest={activeForest}
+      activeCommunityLocation={activeCommunityLocation}
+      communityStatus={{
+        permissionDenied: locationPermissionDenied,
+        message: locationPermissionError,
+      }}
+    >
+      <div className="h-screen w-screen flex flex-col bg-[#0B1220] overflow-hidden">
         <TopNav
           onLogout={handleLogout}
           userRole={session.role}
@@ -216,13 +254,29 @@ function AppContent() {
           activeForest={activeForest}
           onForestSelect={handleForestSelect}
           onRequestLiveLocation={requestLiveLocation}
-          liveCoordinates={liveCoordinates}
+          activeCommunityLocation={activeCommunityLocation}
           locationLoading={locationLoading}
+          citySearchLoading={citySearchLoading}
+          locationPermissionDenied={locationPermissionDenied}
           locationPermissionError={locationPermissionError}
+          onCommunityCitySearch={handleCommunityCitySearch}
         />
         <div className="flex-1 flex overflow-hidden min-h-0">
           <Sidebar currentPage={currentPage} onNavigate={handleNavigation} userRole="admin" />
-          <main className="flex-1 overflow-y-auto overflow-x-hidden">{renderPage()}</main>
+          <main className="flex-1 overflow-y-auto overflow-x-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentPage}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                {renderPage()}
+              </motion.div>
+            </AnimatePresence>
+          </main>
         </div>
         <AlertNotifications />
         <Toaster />
