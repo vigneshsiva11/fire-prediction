@@ -1,42 +1,28 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Flame, X } from 'lucide-react';
+import { useMonitoringContext } from '@/context/MonitoringContext';
 
 interface Notification {
   id: number;
   type: 'critical' | 'warning';
   message: string;
+  timestamp: number;
 }
 
-export function AlertNotifications() {
+interface AlertNotificationsProps {
+  lastLogin: string | null;
+}
+
+export function AlertNotifications({ lastLogin }: AlertNotificationsProps) {
+  const { aiInsights, activeLocation, environmentalData } = useMonitoringContext();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-
-  useEffect(() => {
-    // Simulate incoming alerts
-    const timer1 = setTimeout(() => {
-      addNotification({
-        id: 1,
-        type: 'critical',
-        message: 'Zone C fire risk exceeds 75%',
-      });
-    }, 5000);
-
-    const timer2 = setTimeout(() => {
-      addNotification({
-        id: 2,
-        type: 'warning',
-        message: 'High winds detected in Zone B',
-      });
-    }, 12000);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-    };
-  }, []);
+  const isInitialRenderRef = useRef(true);
+  const previousRiskRef = useRef<number | null>(null);
+  const emittedEventKeysRef = useRef<Set<string>>(new Set());
 
   const addNotification = (notification: Notification) => {
-    setNotifications((prev) => [...prev, notification]);
+    setNotifications((prev) => [...prev, notification].slice(-4));
     // Auto remove after 8 seconds
     setTimeout(() => {
       removeNotification(notification.id);
@@ -46,6 +32,69 @@ export function AlertNotifications() {
   const removeNotification = (id: number) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
+
+  useEffect(() => {
+    const score = Number(aiInsights?.riskScore ?? 0);
+    const dynamicAlertLevel = aiInsights?.dynamicAlertLevel;
+
+    if (!Number.isFinite(score) || !dynamicAlertLevel) {
+      return;
+    }
+
+    if (isInitialRenderRef.current) {
+      isInitialRenderRef.current = false;
+      previousRiskRef.current = score;
+      return;
+    }
+
+    const previousRisk = previousRiskRef.current ?? score;
+    previousRiskRef.current = score;
+
+    const eventTimestamp = new Date(environmentalData?.createdAt || environmentalData?.timestamp || Date.now()).getTime();
+    const lastLoginTimestamp = lastLogin ? new Date(lastLogin).getTime() : 0;
+
+    // Ignore historical/stale alerts on first authenticated render.
+    if (eventTimestamp <= lastLoginTimestamp) {
+      return;
+    }
+
+    const locationName = activeLocation?.name || 'selected location';
+    const eventScope = `${activeLocation?.id || locationName}-${eventTimestamp}`;
+
+    const emit = (key: string, notification: Omit<Notification, 'id' | 'timestamp'>) => {
+      const fullKey = `${eventScope}-${key}`;
+      if (emittedEventKeysRef.current.has(fullKey)) {
+        return;
+      }
+      emittedEventKeysRef.current.add(fullKey);
+      addNotification({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        timestamp: eventTimestamp,
+        ...notification,
+      });
+    };
+
+    if (previousRisk <= 70 && score > 70) {
+      emit('high-threshold', {
+        type: 'warning',
+        message: `High risk threshold crossed in ${locationName} (${score.toFixed(1)}).`,
+      });
+    }
+
+    if (previousRisk <= 85 && score > 85) {
+      emit('critical-threshold', {
+        type: 'critical',
+        message: `Critical fire risk threshold crossed in ${locationName} (${score.toFixed(1)}).`,
+      });
+    }
+
+    if (dynamicAlertLevel === 'Escalation Alert') {
+      emit('escalation', {
+        type: 'warning',
+        message: `Risk escalation detected in ${locationName}. Monitoring intensity should be increased.`,
+      });
+    }
+  }, [aiInsights?.riskScore, aiInsights?.dynamicAlertLevel, activeLocation?.id, activeLocation?.name, environmentalData?.createdAt, environmentalData?.timestamp, lastLogin]);
 
   return (
     <div className="fixed top-20 right-4 z-50 space-y-2 pointer-events-none">

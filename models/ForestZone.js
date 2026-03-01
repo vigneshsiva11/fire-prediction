@@ -40,8 +40,6 @@ const forestZoneSchema = new mongoose.Schema({
   },
 });
 
-forestZoneSchema.index({ regionCode: 1 }, { unique: true });
-
 const ForestZone = mongoose.model('ForestZone', forestZoneSchema);
 
 export default ForestZone;

@@ -49,9 +49,8 @@ export function useEnvironmentalData({ mode, activeForest, lat, lon }) {
   const requestPayload = useCallback(() => {
     if (mode === 'forest' && activeForest) {
       return {
-        mode: 'live',
-        lat: activeForest.center.lat,
-        lon: activeForest.center.lng,
+        mode: 'forest',
+        zoneId: activeForest.id,
       };
     }
 

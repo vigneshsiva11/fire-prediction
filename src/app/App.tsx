@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { LoginPage } from '@/app/components/LoginPage';
 import { Sidebar } from '@/app/components/Sidebar';
@@ -35,7 +35,7 @@ interface AdminSession {
 }
 
 function AppContent() {
-  const { activeForest, setActiveForest, forests, activeCommunityLocation, setActiveCommunityLocation } = useMonitoringContext();
+  const { activeForest, setActiveForest, forests, activeCommunityLocation, setActiveCommunityLocation, loadForestZones } = useMonitoringContext();
 
   const [session, setSession] = useState<AdminSession | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -47,10 +47,26 @@ function AppContent() {
   const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const [locationPermissionError, setLocationPermissionError] = useState('');
   const [hasAttemptedAutoLiveLookup, setHasAttemptedAutoLiveLookup] = useState(false);
+  const previousMonitoringModeRef = useRef<MonitoringMode>('forest');
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
   }, []);
+
+  useEffect(() => {
+    const locationStorageKeys = ['fireguardLocation', 'fireguardCommunityLocation', 'activeCommunityLocation', 'monitoringLocation'];
+
+    locationStorageKeys.forEach((key) => {
+      if (window.localStorage.getItem(key)) {
+        window.localStorage.removeItem(key);
+      }
+      if (window.sessionStorage.getItem(key)) {
+        window.sessionStorage.removeItem(key);
+      }
+    });
+
+    setActiveCommunityLocation(null);
+  }, [setActiveCommunityLocation]);
 
   useEffect(() => {
     let isMounted = true;
@@ -84,6 +100,22 @@ function AppContent() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    loadForestZones();
+  }, [session, loadForestZones]);
+
+  useEffect(() => {
+    if (!session || monitoringMode !== 'forest' || forests.length > 0) {
+      return;
+    }
+
+    loadForestZones();
+  }, [session, monitoringMode, forests.length, loadForestZones]);
+
   const requestLiveLocation = useCallback(async () => {
     setLocationLoading(true);
     setLocationPermissionError('');
@@ -91,7 +123,15 @@ function AppContent() {
 
     try {
       const coordinates = await requestBrowserGeolocation();
-      const locationName = await reverseGeocodeToCity(coordinates.lat, coordinates.lon).catch(() => 'Current Location');
+      console.info(`[FireGuard][Geo] Current Latitude: ${coordinates.lat}`);
+      console.info(`[FireGuard][Geo] Current Longitude: ${coordinates.lon}`);
+
+      if (coordinates.lat < 8 || coordinates.lat > 37) {
+        console.warn('[FireGuard][Geo] Latitude is outside India range. Verify browser/device location settings.');
+      }
+
+      const locationName = await reverseGeocodeToCity(coordinates.lat, coordinates.lon);
+      console.info(`[FireGuard][Geo] Reverse Geocoded Address: ${locationName}`);
 
       const nextLocation: CommunityLocation = {
         name: locationName,
@@ -108,11 +148,11 @@ function AppContent() {
       const geoError = error as GeolocationPositionError;
       if (geoError?.code === geoError.PERMISSION_DENIED) {
         setLocationPermissionDenied(true);
-        setLocationPermissionError('Location permission denied. You can manually enter a city to monitor.');
+        setLocationPermissionError('Location access required for accurate monitoring.');
         return;
       }
 
-      setLocationPermissionError('Unable to retrieve live location. Please retry.');
+      setLocationPermissionError('Unable to determine precise location. Please enable GPS or enter city manually.');
       toast.error('Unable to fetch location data.');
     } finally {
       setLocationLoading(false);
@@ -145,18 +185,30 @@ function AppContent() {
   );
 
   useEffect(() => {
+    if (previousMonitoringModeRef.current !== monitoringMode && monitoringMode === 'live') {
+      setActiveCommunityLocation(null);
+      setLocationPermissionDenied(false);
+      setLocationPermissionError('');
+      setHasAttemptedAutoLiveLookup(false);
+    }
+
+    previousMonitoringModeRef.current = monitoringMode;
+  }, [monitoringMode, setActiveCommunityLocation]);
+
+  useEffect(() => {
     if (monitoringMode === 'forest') {
+      setActiveCommunityLocation(null);
       setLocationPermissionError('');
       setLocationPermissionDenied(false);
       setHasAttemptedAutoLiveLookup(false);
       return;
     }
 
-    if (session && monitoringMode === 'live' && !activeCommunityLocation && !locationLoading && !locationPermissionDenied && !hasAttemptedAutoLiveLookup) {
+    if (session && monitoringMode === 'live' && !activeCommunityLocation && !locationLoading && !hasAttemptedAutoLiveLookup) {
       setHasAttemptedAutoLiveLookup(true);
       requestLiveLocation();
     }
-  }, [session, monitoringMode, activeCommunityLocation, locationLoading, requestLiveLocation, locationPermissionDenied, hasAttemptedAutoLiveLookup]);
+  }, [session, monitoringMode, activeCommunityLocation, locationLoading, requestLiveLocation, hasAttemptedAutoLiveLookup, setActiveCommunityLocation]);
 
   const handleLogin = async ({ username, password }: { username: string; password: string }) => {
     const admin = await loginAdmin(username, password);
@@ -186,6 +238,7 @@ function AppContent() {
   };
 
   const handleForestSelect = (forest: (typeof forests)[number]) => {
+    console.log('Selected Zone ID:', forest?.id);
     setActiveForest(forest);
 
     setTimeout(() => {
@@ -278,7 +331,7 @@ function AppContent() {
             </AnimatePresence>
           </main>
         </div>
-        <AlertNotifications />
+        <AlertNotifications lastLogin={session.lastLogin} />
         <Toaster />
       </div>
     </EnvironmentalDataProvider>

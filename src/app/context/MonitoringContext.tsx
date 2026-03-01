@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { forestZones } from '@/data/forestZones';
+import { calculateFireIntelligence } from '@/utils/firePredictionEngine';
+import { fetchForestZones } from '@/layer1/weatherService';
 
 const MonitoringContext = createContext(null);
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -15,10 +16,12 @@ async function parseApiResponse(response, fallbackMessage) {
 }
 
 export function MonitoringProvider({ children }) {
-  const [activeForest, setActiveForest] = useState(forestZones[0]);
+  const [activeForest, setActiveForest] = useState(null);
+  const [forests, setForests] = useState([]);
   const [activeCommunityLocation, setActiveCommunityLocation] = useState(null);
   const [environmentalData, setEnvironmentalData] = useState(null);
   const [riskData, setRiskData] = useState(null);
+  const [previousEnvironmentalData, setPreviousEnvironmentalData] = useState(null);
   const [previousRiskScore, setPreviousRiskScore] = useState(null);
   const [riskChange, setRiskChange] = useState(0);
   const [activeLocation, setActiveLocation] = useState(null);
@@ -27,6 +30,47 @@ export function MonitoringProvider({ children }) {
   const [activeDrones, setActiveDrones] = useState([]);
   const [droneLoading, setDroneLoading] = useState(false);
   const [droneError, setDroneError] = useState('');
+
+  const loadForestZones = useCallback(async () => {
+    try {
+      const zones = await fetchForestZones();
+      const mappedForests = Array.isArray(zones)
+        ? zones.map((zone) => {
+            const lat = Number(zone.latitude);
+            const lng = Number(zone.longitude);
+            const radiusKm = Number(zone.radiusKm ?? 12);
+            const latDelta = radiusKm / 111;
+            const lonDelta = radiusKm / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.1));
+
+            return {
+              id: zone.id,
+              name: zone.name,
+              country: zone.state || 'N/A',
+              biome: zone.description || 'Forest Zone',
+              priority: 'High',
+              center: { lat, lng },
+              bounds: [
+                [lat - latDelta, lng - lonDelta],
+                [lat + latDelta, lng + lonDelta],
+              ],
+            };
+          })
+        : [];
+
+      setForests(mappedForests);
+      setActiveForest((previousForest) => {
+        if (previousForest && mappedForests.some((zone) => zone.id === previousForest.id)) {
+          return previousForest;
+        }
+
+        return mappedForests[0] ?? null;
+      });
+    } catch (error) {
+      console.error('Failed to load forest zones:', error instanceof Error ? error.message : error);
+      setForests([]);
+      setActiveForest(null);
+    }
+  }, []);
 
   const getLocationLabel = useCallback((location = activeLocation) => String(location?.name || '').trim(), [activeLocation]);
 
@@ -124,6 +168,10 @@ export function MonitoringProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    loadForestZones();
+  }, [loadForestZones]);
+
+  useEffect(() => {
     loadDrones(activeLocation);
   }, [activeLocation?.id, activeLocation?.name, loadDrones]);
 
@@ -181,8 +229,25 @@ export function MonitoringProvider({ children }) {
     return () => clearInterval(intervalId);
   }, [activeDrones.length, activeLocation, loadDrones]);
 
+  const aiInsights = useMemo(() => {
+    if (!environmentalData) {
+      return null;
+    }
+
+    return calculateFireIntelligence(environmentalData, previousEnvironmentalData, {
+      terrainFactor: environmentalData?.terrainFactor ?? 0.5,
+    });
+  }, [environmentalData, previousEnvironmentalData]);
+
   const setMonitoringSnapshot = useCallback(({ data, risk, location, refresh }) => {
-    setEnvironmentalData(data ?? null);
+    const calculatedFallbackRisk = data ? calculateFireIntelligence(data, environmentalData, { terrainFactor: data?.terrainFactor ?? 0.5 }) : null;
+
+    setEnvironmentalData((currentData) => {
+      if (currentData) {
+        setPreviousEnvironmentalData(currentData);
+      }
+      return data ?? null;
+    });
     setActiveLocation(location ?? null);
 
     if (typeof refresh === 'function') {
@@ -190,7 +255,14 @@ export function MonitoringProvider({ children }) {
     }
 
     setRiskData((previousRiskData) => {
-      const nextScore = typeof risk?.riskScore === 'number' ? risk.riskScore : null;
+      const nextScore =
+        typeof risk?.riskScore === 'number'
+          ? risk.riskScore
+          : typeof risk?.score === 'number'
+          ? risk.score
+          : typeof calculatedFallbackRisk?.riskScore === 'number'
+          ? calculatedFallbackRisk.riskScore
+          : null;
       const previousScore = typeof previousRiskData?.riskScore === 'number' ? previousRiskData.riskScore : null;
 
       if (nextScore !== null && previousScore !== null) {
@@ -201,9 +273,23 @@ export function MonitoringProvider({ children }) {
         setRiskChange(0);
       }
 
-      return risk ?? null;
+      if (risk) {
+        return risk;
+      }
+
+      if (!calculatedFallbackRisk) {
+        return null;
+      }
+
+      return {
+        riskScore: calculatedFallbackRisk.riskScore,
+        riskLevel: calculatedFallbackRisk.riskLevel,
+        recommendedAction: calculatedFallbackRisk.recommendations?.[0] || 'Continue routine monitoring',
+        explanation: calculatedFallbackRisk.explanation,
+        confidenceScore: calculatedFallbackRisk.confidenceScore,
+      };
     });
-  }, []);
+  }, [environmentalData]);
 
   const value = useMemo(
     () => ({
@@ -213,6 +299,7 @@ export function MonitoringProvider({ children }) {
       setActiveCommunityLocation,
       environmentalData,
       riskData,
+      aiInsights,
       previousRiskScore,
       riskChange,
       activeLocation,
@@ -225,13 +312,15 @@ export function MonitoringProvider({ children }) {
       loadDrones,
       activateDrone,
       stopDrone,
-      forests: forestZones,
+      forests,
+      loadForestZones,
     }),
     [
       activeForest,
       activeCommunityLocation,
       environmentalData,
       riskData,
+      aiInsights,
       previousRiskScore,
       riskChange,
       activeLocation,
@@ -244,6 +333,8 @@ export function MonitoringProvider({ children }) {
       loadDrones,
       activateDrone,
       stopDrone,
+      forests,
+      loadForestZones,
     ],
   );
 

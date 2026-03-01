@@ -51,6 +51,7 @@ async function resolveModeAndLocation(query) {
     }
 
     if (!mongoose.Types.ObjectId.isValid(zoneId)) {
+      console.warn('Invalid forest zone id received:', zoneId);
       return { error: 'Invalid forest zone id.' };
     }
 
@@ -73,6 +74,9 @@ async function resolveModeAndLocation(query) {
   if (parsedCoords.error) {
     return { error: parsedCoords.error };
   }
+
+  console.log('Incoming Lat:', parsedCoords.latitude);
+  console.log('Incoming Lng:', parsedCoords.longitude);
 
   return {
     mode,

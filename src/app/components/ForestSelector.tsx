@@ -12,7 +12,7 @@ interface Forest {
 
 interface ForestSelectorProps {
   forests: Forest[];
-  activeForest: Forest;
+  activeForest: Forest | null;
   onSelect: (forest: Forest) => void;
 }
 
@@ -43,12 +43,13 @@ export function ForestSelector({ forests, activeForest, onSelect }: ForestSelect
 
       <button
         type="button"
+        disabled={!forests.length}
         onClick={() => setIsOpen((prev) => !prev)}
         className="flex w-full items-center justify-between rounded-xl border border-slate-700/50 bg-slate-900 px-3 py-2 text-white hover:bg-slate-800"
       >
         <div className="text-left">
-          <p className="font-semibold">{activeForest.name}</p>
-          <p className="text-xs text-slate-400">{activeForest.country}</p>
+          <p className="font-semibold">{activeForest?.name || 'Select a forest zone to begin monitoring.'}</p>
+          <p className="text-xs text-slate-400">{activeForest?.country || 'Awaiting zone data'}</p>
         </div>
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>

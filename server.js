@@ -41,6 +41,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/zones', protectRoute, zoneRoutes);
+app.use('/api/forest-zones', protectRoute, zoneRoutes);
 app.use('/api/environment', protectRoute, environmentRoutes);
 app.use('/api/risk', protectRoute, riskRoutes);
 app.use('/api/drones', protectRoute, droneRoutes);

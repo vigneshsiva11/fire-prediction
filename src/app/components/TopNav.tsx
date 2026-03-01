@@ -28,7 +28,7 @@ interface TopNavProps {
   monitoringMode: MonitoringMode;
   onMonitoringModeChange: (mode: MonitoringMode) => void;
   forests: Forest[];
-  activeForest: Forest;
+  activeForest: Forest | null;
   onForestSelect: (forest: Forest) => void;
   onRequestLiveLocation: () => void;
   activeCommunityLocation: CommunityLocation | null;
@@ -186,7 +186,7 @@ export function TopNav({
                 <span className="text-xs text-slate-400">{activeCommunityLocation ? `Monitoring: ${activeCommunityLocation.name}` : 'Awaiting geolocation'}</span>
               </div>
 
-              {locationPermissionDenied ? (
+              {locationPermissionDenied || Boolean(locationPermissionError) ? (
                 <form onSubmit={handleCitySearchSubmit} className="flex w-[280px] items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2">
                   <Search className="h-4 w-4 text-slate-400" />
                   <input

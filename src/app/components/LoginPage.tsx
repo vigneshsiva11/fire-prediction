@@ -137,7 +137,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 onClick={() => setShowDemoCredentials((prev) => !prev)}
                 className="w-full flex items-center justify-between text-left text-amber-100"
               >
-                <span>Demo Admin Access (Hackathon Mode)</span>
+                <span>Demo Admin Access</span>
                 <ChevronDown className={`h-4 w-4 transition-transform ${showDemoCredentials ? 'rotate-180' : ''}`} />
               </button>
 

@@ -34,9 +34,17 @@ async function parseApiResponse(response, fallbackMessage) {
 }
 
 export async function fetchForestZones() {
-  const response = await fetch(buildUrl('/api/zones'), {
+  let response = await fetch(buildUrl('/api/forest-zones'), {
     credentials: 'include',
   });
+
+  // Backward-compatible fallback for older backend route naming.
+  if (response.status === 404) {
+    response = await fetch(buildUrl('/api/zones'), {
+      credentials: 'include',
+    });
+  }
+
   const payload = await parseApiResponse(response, 'Failed to fetch forest zones.');
 
   return Array.isArray(payload?.data)

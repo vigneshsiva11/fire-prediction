@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import L from 'leaflet';
 import {
   BarChart,
   Bar,
@@ -15,12 +14,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, Tooltip as LeafletTooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { TrendingUp, AlertTriangle, Wind, Droplets, Thermometer, Leaf } from 'lucide-react';
 import { MetricCard } from '@/app/components/MetricCard';
 import { useMonitoringContext } from '@/context/MonitoringContext';
 import { calculateRisk } from '@/utils/riskEngine';
+import { createDroneMarkerIcon } from '@/app/components/maps/droneMarkerIcon';
+import { calculateFireIntelligence } from '@/utils/firePredictionEngine';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -34,21 +35,28 @@ function toPercent(value: number, max: number) {
   return clamp((value / max) * 100, 0, 100);
 }
 
-function buildDroneIcon(color: string) {
-  return L.divIcon({
-    className: 'risk-drone-marker',
-    html: `<div style="width:12px;height:12px;border-radius:9999px;background:${color};box-shadow:0 0 0 5px rgba(15,23,42,0.5),0 0 14px ${color};border:2px solid rgba(226,232,240,0.95);"></div>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
-  });
-}
-
 function MapViewport({ lat, lon, zoom }: { lat: number; lon: number; zoom: number }) {
   const map = useMap();
 
   useEffect(() => {
     map.setView([lat, lon], zoom, { animate: true });
   }, [map, lat, lon, zoom]);
+
+  return null;
+}
+
+function MapFocus({ focus }: { focus: { lat: number; lon: number } | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!focus) {
+      return;
+    }
+
+    map.flyTo([focus.lat, focus.lon], map.getZoom(), {
+      duration: 0.5,
+    });
+  }, [map, focus?.lat, focus?.lon]);
 
   return null;
 }
@@ -60,12 +68,12 @@ function CountUp({ value, decimals = 0 }: { value: number; decimals?: number }) 
     let frameId = 0;
     const duration = 450;
     const start = performance.now();
-    const initialValue = displayValue;
+    const from = displayValue;
 
     const tick = (now: number) => {
       const progress = Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      const nextValue = initialValue + (value - initialValue) * eased;
+      const nextValue = from + (value - from) * eased;
       setDisplayValue(nextValue);
 
       if (progress < 1) {
@@ -74,7 +82,6 @@ function CountUp({ value, decimals = 0 }: { value: number; decimals?: number }) 
     };
 
     frameId = requestAnimationFrame(tick);
-
     return () => cancelAnimationFrame(frameId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -83,27 +90,32 @@ function CountUp({ value, decimals = 0 }: { value: number; decimals?: number }) 
 }
 
 export function RiskAnalysis() {
-  const { environmentalData, activeLocation, riskData, previousRiskScore, riskChange, refreshEnvironmentalData, activeDrones } = useMonitoringContext();
+  const { environmentalData, activeLocation, riskData, previousRiskScore, riskChange, refreshEnvironmentalData, activeDrones, aiInsights } = useMonitoringContext();
+
+  const [selectedDroneId, setSelectedDroneId] = useState<string | null>(null);
+  const [focusedDrone, setFocusedDrone] = useState<{ lat: number; lon: number } | null>(null);
 
   const calculatedRisk = useMemo(() => calculateRisk(environmentalData), [environmentalData]);
 
+  const intelligence = useMemo(() => aiInsights || calculateFireIntelligence(environmentalData), [aiInsights, environmentalData]);
+
   const dynamicRisk = useMemo(
     () => ({
-      score: Number((riskData?.riskScore ?? riskData?.score ?? calculatedRisk.score ?? 0).toFixed(1)),
-      level: riskData?.riskLevel || riskData?.level || calculatedRisk.level || 'N/A',
-      recommendedAction: riskData?.recommendedAction || 'Continue monitoring environmental changes.',
+      score: Number((intelligence?.riskScore ?? riskData?.riskScore ?? riskData?.score ?? calculatedRisk.score ?? 0).toFixed(1)),
+      level: intelligence?.riskLevel || riskData?.riskLevel || riskData?.level || calculatedRisk.level || 'N/A',
+      recommendedAction: intelligence?.recommendations?.[0] || riskData?.recommendedAction || 'Continue monitoring environmental changes.',
     }),
-    [riskData, calculatedRisk],
+    [intelligence, riskData, calculatedRisk],
   );
 
   const riskColor =
     dynamicRisk.level === 'Critical'
       ? '#ef4444'
       : dynamicRisk.level === 'High'
-        ? '#f97316'
-        : dynamicRisk.level === 'Moderate'
-          ? '#f59e0b'
-          : '#3b82f6';
+      ? '#f97316'
+      : dynamicRisk.level === 'Moderate'
+      ? '#f59e0b'
+      : '#3b82f6';
 
   const criticalZones = dynamicRisk.score > 85 ? 2 : dynamicRisk.score > 70 ? 1 : 0;
   const monitoredAreas = activeLocation?.type === 'forest' ? 5 : 1;
@@ -116,6 +128,14 @@ export function RiskAnalysis() {
   const circleOffset = circleCircumference - (circleProgress / 100) * circleCircumference;
 
   const activeLocationDrones = useMemo(() => activeDrones.filter((drone: any) => drone.status === 'active'), [activeDrones]);
+  const markerDrones = useMemo(
+    () =>
+      activeLocationDrones.map((drone: any, index: number) => ({
+        ...drone,
+        labelOffset: (index % 3) * 16 - 16,
+      })),
+    [activeLocationDrones],
+  );
 
   const radarData = useMemo(
     () => [
@@ -129,21 +149,38 @@ export function RiskAnalysis() {
   );
 
   const zoneComparison = useMemo(() => {
+    const forecast = intelligence?.hourlyForecast || [];
+
+    if (forecast.length >= 5) {
+      return forecast.slice(0, 5).map((point: any, index: number) => ({
+        zone: `Zone ${String.fromCharCode(65 + index)}`,
+        risk: clamp(Number(point.predicted ?? dynamicRisk.score), 0, 100),
+      }));
+    }
+
     const base = Number(dynamicRisk.score || 0);
-    return [
-      { zone: 'Zone A', risk: clamp(base, 0, 100) },
-      { zone: 'Zone B', risk: clamp(base - Math.random() * 6, 0, 100) },
-      { zone: 'Zone C', risk: clamp(base + Math.random() * 8, 0, 100) },
-      { zone: 'Zone D', risk: clamp(base - Math.random() * 4, 0, 100) },
-      { zone: 'Zone E', risk: clamp(base + Math.random() * 5, 0, 100) },
-    ];
-  }, [dynamicRisk.score]);
+    const offsets = [0, -5, 8, -3, 5];
+    return offsets.map((offset, index) => ({
+      zone: `Zone ${String.fromCharCode(65 + index)}`,
+      risk: clamp(base + offset, 0, 100),
+    }));
+  }, [dynamicRisk.score, intelligence]);
 
   useEffect(() => {
     if (activeLocation) {
       refreshEnvironmentalData(activeLocation);
     }
   }, [activeLocation?.id, activeLocation?.lat, activeLocation?.lon, refreshEnvironmentalData]);
+
+  useEffect(() => {
+    if (!selectedDroneId || !activeLocationDrones.some((drone: any) => drone._id === selectedDroneId)) {
+      setSelectedDroneId(activeLocationDrones[0]?._id ?? null);
+    }
+  }, [activeLocationDrones, selectedDroneId]);
+
+  useEffect(() => {
+    setFocusedDrone(null);
+  }, [activeLocation?.id, activeLocation?.name]);
 
   const temperature = Number(environmentalData?.temperature ?? 0);
   const humidity = Number(environmentalData?.humidity ?? 0);
@@ -199,9 +236,9 @@ export function RiskAnalysis() {
         <MetricCard title="Monitored Areas" value={`${monitoredAreas}`} icon={Leaf} color="#3B82F6" delay={0.24} />
       </div>
 
-      {dynamicRisk.level === 'Critical' ? (
+      {dynamicRisk.level === 'Critical' || intelligence?.dynamicAlertLevel === 'Critical Alert' ? (
         <div className="mb-6 rounded-xl border-l-4 border-red-500 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Critical fire risk detected. Escalate monitoring and response readiness for this location.
+          Critical fire risk detected. Escalate monitoring and response readiness for this location. {intelligence?.explanation || ''}
         </div>
       ) : null}
 
@@ -215,8 +252,17 @@ export function RiskAnalysis() {
           <div className="h-[320px] w-full">
             <MapContainer center={[activeLocation.lat, activeLocation.lon]} zoom={riskMapZoom} className="h-full w-full">
               <MapViewport lat={activeLocation.lat} lon={activeLocation.lon} zoom={riskMapZoom} />
+              <MapFocus focus={focusedDrone} />
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Marker position={[activeLocation.lat, activeLocation.lon]} icon={buildDroneIcon('#3B82F6')}>
+              <Marker
+                position={[activeLocation.lat, activeLocation.lon]}
+                icon={createDroneMarkerIcon({
+                  name: activeLocation.name,
+                  status: 'active',
+                  selected: true,
+                  labelOffset: -14,
+                })}
+              >
                 <Popup>
                   <div className="text-sm">
                     <p className="font-semibold">{activeLocation.name}</p>
@@ -224,8 +270,32 @@ export function RiskAnalysis() {
                   </div>
                 </Popup>
               </Marker>
-              {activeLocationDrones.map((drone: any) => (
-                <Marker key={drone._id} position={[drone.lat, drone.lon]} icon={buildDroneIcon(drone.battery < 20 ? '#EF4444' : '#F59E0B')}>
+              {markerDrones.map((drone: any) => (
+                <Marker
+                  key={drone._id}
+                  position={[drone.lat, drone.lon]}
+                  icon={createDroneMarkerIcon({
+                    name: drone.name,
+                    status: drone.status,
+                    battery: drone.battery,
+                    selected: selectedDroneId === drone._id,
+                    labelOffset: drone.labelOffset,
+                  })}
+                  eventHandlers={{
+                    click: () => {
+                      setSelectedDroneId(drone._id);
+                      setFocusedDrone({ lat: drone.lat, lon: drone.lon });
+                    },
+                  }}
+                >
+                  <LeafletTooltip direction="top" offset={[12, -8]} opacity={1} sticky>
+                    <div className="text-xs leading-5">
+                      <p className="font-semibold">{drone.name}</p>
+                      <p>Battery: {drone.battery}%</p>
+                      <p>Signal: {drone.signal}%</p>
+                      <p>Mode: {activeLocation.type === 'forest' ? 'Forest Monitoring' : 'Community Monitoring'}</p>
+                    </div>
+                  </LeafletTooltip>
                   <Popup>
                     <div className="text-sm">
                       <p className="font-semibold">{drone.name}</p>

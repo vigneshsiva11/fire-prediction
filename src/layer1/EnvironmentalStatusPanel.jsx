@@ -2,6 +2,8 @@ import { motion } from 'motion/react';
 import { Activity, AlertTriangle, Cloud, Droplets, Gauge, RefreshCcw, Thermometer, Wind } from 'lucide-react';
 import { useEnvironmentalDataContext } from '@/layer1/EnvironmentalDataContext';
 import { Button } from '@/app/components/ui/button';
+import { useMonitoringContext } from '@/context/MonitoringContext';
+import { calculateFireIntelligence } from '@/utils/firePredictionEngine';
 
 const INFO_MESSAGES = new Set([
   'Select a forest zone to begin monitoring.',
@@ -34,6 +36,13 @@ function formatTimestamp(timestamp) {
 
 export function EnvironmentalStatusPanel() {
   const { data, riskData, loading, refreshing, error, zoneInfo, monitoringMode, refreshData, location, communityStatus } = useEnvironmentalDataContext();
+  const { aiInsights } = useMonitoringContext();
+
+  const intelligence = aiInsights || calculateFireIntelligence(data);
+  const resolvedRiskScore = intelligence?.riskScore ?? riskData?.riskScore;
+  const resolvedRiskLevel = intelligence?.riskLevel ?? riskData?.riskLevel;
+  const resolvedRecommendation = intelligence?.recommendations?.[0] ?? riskData?.recommendedAction;
+  const resolvedExplanation = intelligence?.explanation ?? riskData?.explanation;
 
   const lastUpdated = data?.createdAt || data?.timestamp;
   const isInfoMessage = error && INFO_MESSAGES.has(error);
@@ -54,12 +63,9 @@ export function EnvironmentalStatusPanel() {
         <div className="flex items-center gap-2">
           <motion.div
             className="inline-flex items-center gap-2 rounded-full border border-[#3b82f6]/30 bg-[#3b82f6]/10 px-3 py-1.5 text-xs text-[#bfdbfe]"
-            animate={{ boxShadow: ['0 0 0 0 rgba(59,130,246,0.6)', '0 0 0 10px rgba(59,130,246,0)', '0 0 0 0 rgba(59,130,246,0)'] }}
-            transition={{ duration: 2, repeat: Infinity }}
           >
             <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3b82f6] opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#3b82f6]" />
+              <span className="saas-live-dot relative inline-flex h-2.5 w-2.5 rounded-full bg-[#3b82f6]" />
             </span>
             Live Ingestion Active
           </motion.div>
@@ -112,15 +118,15 @@ export function EnvironmentalStatusPanel() {
 
       <div className="mt-6 grid gap-3 rounded-2xl border border-slate-500/20 bg-[#0b1220]/70 p-4 text-sm text-slate-300 md:grid-cols-2">
         <span>Last Updated: {formatTimestamp(lastUpdated)}</span>
-        <span>Risk Score: {riskData?.riskScore ?? '--'}</span>
-        <span>Risk Level: {riskData?.riskLevel ?? '--'}</span>
-        <span>Recommended Action: {riskData?.recommendedAction ?? '--'}</span>
+        <span>Risk Score: {resolvedRiskScore ?? '--'}</span>
+        <span>Risk Level: {resolvedRiskLevel ?? '--'}</span>
+        <span>Recommended Action: {resolvedRecommendation ?? '--'}</span>
       </div>
 
-      {riskData?.explanation ? (
+      {resolvedExplanation ? (
         <div className="mt-4 rounded-xl border border-[#f59e0b]/30 bg-[#f59e0b]/10 p-3 text-sm text-[#fde68a] flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 mt-0.5" />
-          <span>{riskData.explanation}</span>
+          <span>{resolvedExplanation}</span>
         </div>
       ) : null}
     </section>

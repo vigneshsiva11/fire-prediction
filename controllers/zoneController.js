@@ -18,6 +18,7 @@ function toZoneResponse(zone) {
 export async function getZones(_req, res) {
   try {
     const zones = await ForestZone.find().sort({ name: 1 });
+    console.log('Forest zones fetched:', zones.length);
 
     return res.status(200).json({
       success: true,

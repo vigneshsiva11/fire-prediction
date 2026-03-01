@@ -2,23 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import html2canvas from 'html2canvas';
-import L from 'leaflet';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Battery, Signal, Camera, MapPin, Thermometer, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { useMonitoringContext } from '@/context/MonitoringContext';
+import { createDroneMarkerIcon } from '@/app/components/maps/droneMarkerIcon';
+import { calculateFireIntelligence } from '@/utils/firePredictionEngine';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-
-function buildDroneIcon(color: string) {
-  return L.divIcon({
-    className: 'drone-map-marker',
-    html: `<div style="width:14px;height:14px;border-radius:9999px;background:${color};box-shadow:0 0 0 6px rgba(15,23,42,0.55),0 0 16px ${color};border:2px solid rgba(226,232,240,0.95);"></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
-  });
-}
 
 interface DroneCapture {
   _id: string;
@@ -39,6 +31,22 @@ function MapViewport({ lat, lon, zoom }: { lat: number; lon: number; zoom: numbe
   return null;
 }
 
+function MapFocus({ focus }: { focus: { lat: number; lon: number } | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!focus) {
+      return;
+    }
+
+    map.flyTo([focus.lat, focus.lon], map.getZoom(), {
+      duration: 0.5,
+    });
+  }, [map, focus?.lat, focus?.lon]);
+
+  return null;
+}
+
 async function parseResponse(response: Response, fallbackMessage: string) {
   const payload = await response.json().catch(() => null);
 
@@ -53,6 +61,7 @@ export function DroneMonitoring() {
   const {
     activeLocation,
     environmentalData,
+    aiInsights,
     availableDrones,
     activeDrones,
     droneLoading,
@@ -66,6 +75,8 @@ export function DroneMonitoring() {
   const [selectedCapture, setSelectedCapture] = useState<DroneCapture | null>(null);
   const [captureLoading, setCaptureLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedDroneId, setSelectedDroneId] = useState<string | null>(null);
+  const [focusedDrone, setFocusedDrone] = useState<{ lat: number; lon: number } | null>(null);
 
   const zoom = activeLocation?.type === 'forest' ? 9 : 14;
   const activeLocationName = activeLocation?.name || '';
@@ -73,6 +84,14 @@ export function DroneMonitoring() {
   const activeLocationDrones = useMemo(
     () => activeDrones.filter((drone: any) => drone.status === 'active'),
     [activeDrones],
+  );
+  const markerDrones = useMemo(
+    () =>
+      activeLocationDrones.map((drone: any, index: number) => ({
+        ...drone,
+        labelOffset: (index % 3) * 16 - 16,
+      })),
+    [activeLocationDrones],
   );
 
   const metrics = useMemo(
@@ -84,6 +103,8 @@ export function DroneMonitoring() {
     }),
     [environmentalData],
   );
+
+  const intelligence = useMemo(() => aiInsights || calculateFireIntelligence(environmentalData), [aiInsights, environmentalData]);
 
   const fetchCaptures = async () => {
     if (!activeLocationName) {
@@ -101,6 +122,12 @@ export function DroneMonitoring() {
   useEffect(() => {
     setError(droneError || '');
   }, [droneError]);
+
+  useEffect(() => {
+    if (!selectedDroneId || !activeLocationDrones.some((drone: any) => drone._id === selectedDroneId)) {
+      setSelectedDroneId(activeLocationDrones[0]?._id ?? null);
+    }
+  }, [activeLocationDrones, selectedDroneId]);
 
   useEffect(() => {
     if (!activeLocation) {
@@ -126,6 +153,10 @@ export function DroneMonitoring() {
     };
   }, [selectedCapture]);
 
+  useEffect(() => {
+    setFocusedDrone(null);
+  }, [activeLocation?.id, activeLocation?.name]);
+
   const handleActivateDrone = async (droneId: string) => {
     try {
       setError('');
@@ -144,6 +175,11 @@ export function DroneMonitoring() {
     } catch (stopError) {
       setError(stopError instanceof Error ? stopError.message : 'Unable to stop drone.');
     }
+  };
+
+  const handleFocusDrone = (drone: { _id: string; lat: number; lon: number }) => {
+    setSelectedDroneId(drone._id);
+    setFocusedDrone({ lat: drone.lat, lon: drone.lon });
   };
 
   const handleCaptureImage = async () => {
@@ -217,7 +253,8 @@ export function DroneMonitoring() {
             <div>
               <h3 className="text-white">Live Drone Tracking</h3>
               <p className="text-sm text-gray-400">
-                Monitoring {activeLocation.name} ({activeLocation.type === 'forest' ? 'Forest' : 'Community'})
+                Monitoring {activeLocation.name} ({activeLocation.type === 'forest' ? 'Forest' : 'Community'}) | AI Recommendation:{' '}
+                {intelligence?.recommendations?.[0] || 'Maintain routine patrol cycle and continue passive monitoring'}
               </p>
             </div>
             <Button type="button" onClick={handleCaptureImage} className="h-8" disabled={captureLoading || droneLoading}>
@@ -229,8 +266,20 @@ export function DroneMonitoring() {
           <div id="satellite-map" className="h-[500px] w-full">
             <MapContainer center={[activeLocation.lat, activeLocation.lon]} zoom={zoom} className="h-full w-full">
               <MapViewport lat={activeLocation.lat} lon={activeLocation.lon} zoom={zoom} />
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Marker position={[activeLocation.lat, activeLocation.lon]} icon={buildDroneIcon('#3B82F6')}>
+              <MapFocus focus={focusedDrone} />
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                attribution="Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+              />
+              <Marker
+                position={[activeLocation.lat, activeLocation.lon]}
+                icon={createDroneMarkerIcon({
+                  name: activeLocation.name,
+                  status: 'active',
+                  selected: true,
+                  labelOffset: -14,
+                })}
+              >
                 <Popup>
                   <div className="text-sm">
                     <p className="font-semibold">{activeLocation.name}</p>
@@ -238,8 +287,29 @@ export function DroneMonitoring() {
                   </div>
                 </Popup>
               </Marker>
-              {activeLocationDrones.map((drone: any) => (
-                <Marker key={drone._id} position={[drone.lat, drone.lon]} icon={buildDroneIcon(drone.battery < 20 ? '#EF4444' : '#F59E0B')}>
+              {markerDrones.map((drone: any) => (
+                <Marker
+                  key={drone._id}
+                  position={[drone.lat, drone.lon]}
+                  icon={createDroneMarkerIcon({
+                    name: drone.name,
+                    status: drone.status,
+                    battery: drone.battery,
+                    selected: selectedDroneId === drone._id,
+                    labelOffset: drone.labelOffset,
+                  })}
+                  eventHandlers={{
+                    click: () => handleFocusDrone(drone),
+                  }}
+                >
+                  <Tooltip direction="top" offset={[12, -8]} opacity={1} sticky>
+                    <div className="text-xs leading-5">
+                      <p className="font-semibold">{drone.name}</p>
+                      <p>Battery: {drone.battery}%</p>
+                      <p>Signal: {drone.signal}%</p>
+                      <p>Mode: {activeLocation.type === 'forest' ? 'Forest Monitoring' : 'Community Monitoring'}</p>
+                    </div>
+                  </Tooltip>
                   <Popup>
                     <div className="text-sm">
                       <p className="font-semibold">{drone.name}</p>
@@ -268,7 +338,21 @@ export function DroneMonitoring() {
                 <p className="text-sm text-slate-400">No active drones deployed.</p>
               ) : (
                 activeLocationDrones.map((drone: any) => (
-                  <div key={drone._id} className="rounded-xl border border-slate-600/30 bg-slate-900/45 p-3 transition-all duration-200 hover:border-slate-500/40">
+                  <div
+                    key={drone._id}
+                    onClick={() => handleFocusDrone(drone)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleFocusDrone(drone);
+                      }
+                    }}
+                    className={`w-full rounded-xl border bg-slate-900/45 p-3 text-left transition-all duration-200 ${
+                      selectedDroneId === drone._id ? 'border-blue-500/45' : 'border-slate-600/30 hover:border-slate-500/40'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <p className="text-sm text-white">{drone.name}</p>
                       <span className="text-[11px] rounded bg-[#3B82F6]/20 px-2 py-0.5 text-[#93C5FD]">{drone.status}</span>
