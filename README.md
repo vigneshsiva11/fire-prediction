@@ -37,7 +37,7 @@ It combines:
 - `Reports`: Derived analytics + model summary + export actions
 - `Settings`: Runtime preferences
 
-## Architecture (High Level)
+## Architecture 
 
 ### Backend
 
@@ -96,19 +96,6 @@ Build frontend:
 npm run build
 ```
 
-## Bootstrap Commands
-
-Create admin:
-
-```bash
-npm run create-admin
-```
-
-Seed forest zones:
-
-```bash
-npm run seed-zones
-```
 
 ## Default Admin (seed script)
 
